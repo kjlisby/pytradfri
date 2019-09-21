@@ -1,15 +1,27 @@
+from .color import COLORS
 from .const import (
     ROOT_GROUPS,
     ATTR_DEVICE_STATE,
     ATTR_LIGHT_DIMMER,
+    ATTR_LIGHT_COLOR_X,
+    ATTR_LIGHT_COLOR_Y,
+    ATTR_LIGHT_COLOR_HEX,
     ATTR_ID,
-    ATTR_TRANSITION_TIME
-)
+    ATTR_GROUP_MEMBERS,
+    ATTR_MOOD,
+    ATTR_HS_LINK,
+    ATTR_TRANSITION_TIME,
+    RANGE_X,
+    RANGE_Y,
+    RANGE_MIREDS,
+    ATTR_LIGHT_MIREDS,
+    RANGE_HUE,
+    RANGE_SATURATION,
+    ATTR_LIGHT_COLOR_SATURATION,
+    ATTR_LIGHT_COLOR_HUE,
+    RANGE_BRIGHTNESS)
+from .error import ColorError
 from .resource import ApiResource
-
-ROOT_DEVICES2 = "15002"  # ??
-ATTR_MEMBERS = "9018"
-ATTR_MOOD = "9039"
 
 
 class Group(ApiResource):
@@ -33,14 +45,18 @@ class Group(ApiResource):
         return self.raw.get(ATTR_LIGHT_DIMMER)
 
     @property
+    def hex_color(self):
+        return self.raw.get(ATTR_LIGHT_COLOR_HEX)
+
+    @property
     def member_ids(self):
         """Members of this group."""
-        info = self.raw.get(ATTR_MEMBERS, {})
+        info = self.raw.get(ATTR_GROUP_MEMBERS, {})
 
-        if not info or ROOT_DEVICES2 not in info:
+        if not info or ATTR_HS_LINK not in info:
             return []
 
-        return info[ROOT_DEVICES2].get(ATTR_ID, [])
+        return info[ATTR_HS_LINK].get(ATTR_ID, [])
 
     @property
     def mood_id(self):
@@ -79,6 +95,79 @@ class Group(ApiResource):
         if transition_time is not None:
             values[ATTR_TRANSITION_TIME] = transition_time
         return self.set_values(values)
+
+    def set_color_temp(self, color_temp, *, index=0, transition_time=None):
+        """Set color temp a light."""
+        self._value_validate(color_temp, RANGE_MIREDS, "Color temperature")
+
+        values = {
+            ATTR_LIGHT_MIREDS: color_temp
+        }
+
+        if transition_time is not None:
+            values[ATTR_TRANSITION_TIME] = transition_time
+
+        return self.set_values(values)
+
+    def set_hex_color(self, color, transition_time=None):
+        """Set hex color of a group."""
+        values = {
+            ATTR_LIGHT_COLOR_HEX: color,
+        }
+        if transition_time is not None:
+            values[ATTR_TRANSITION_TIME] = transition_time
+        return self.set_values(values)
+
+    def set_hsb(self, hue, saturation, brightness=None, *, index=0,
+                transition_time=None):
+        """Set HSB color settings of the light."""
+        self._value_validate(hue, RANGE_HUE, "Hue")
+        self._value_validate(saturation, RANGE_SATURATION, "Saturation")
+
+        values = {
+            ATTR_LIGHT_COLOR_SATURATION: saturation,
+            ATTR_LIGHT_COLOR_HUE: hue
+        }
+
+        if brightness is not None:
+            values[ATTR_LIGHT_DIMMER] = brightness
+            self._value_validate(brightness, RANGE_BRIGHTNESS, "Brightness")
+
+        if transition_time is not None:
+            values[ATTR_TRANSITION_TIME] = transition_time
+
+        return self.set_values(values)
+
+    def set_xy_color(self, color_x, color_y, transition_time=None):
+        """Set xy color of a group."""
+        self._value_validate(color_x, RANGE_X, "X color")
+        self._value_validate(color_y, RANGE_Y, "Y color")
+
+        values = {
+            ATTR_LIGHT_COLOR_X: color_x,
+            ATTR_LIGHT_COLOR_Y: color_y
+        }
+
+        if transition_time is not None:
+            values[ATTR_TRANSITION_TIME] = transition_time
+
+        return self.set_values(values)
+
+    def set_predefined_color(self, colorname, transition_time=None):
+        try:
+            color = COLORS[colorname.lower().replace(" ", "_")]
+            return self.set_hex_color(color, transition_time=transition_time)
+        except KeyError:
+            raise ColorError('Invalid color specified: %s',
+                             colorname)
+
+    def _value_validate(self, value, rnge, identifier="Given"):
+        """
+        Make sure a value is within a given range
+        """
+        if value is not None and (value < rnge[0] or value > rnge[1]):
+            raise ValueError('%s value must be between %d and %d.'
+                             % (identifier, rnge[0], rnge[1]))
 
     def __repr__(self):
         state = 'on' if self.state else 'off'
